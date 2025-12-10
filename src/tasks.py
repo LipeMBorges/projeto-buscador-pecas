@@ -6,45 +6,71 @@ from .config import HARDWARE_SITES
 from .models import SearchResult
 
 
-def build_hardware_task_prompt(query: str) -> str:
+def build_hardware_task_prompt(search_query: str) -> str:
     """
     Monta o prompt que será enviado para o Browser Use.
 
-    Explicando para júnior:
-    - Aqui você descreve, em linguagem natural, o que quer que o
-      agente faça dentro do navegador.
-    - Seja específico com os sites e com o formato dos dados.
+    IMPORTANTE:
+    - 'search_query' aqui já é uma versão simplificada da frase do usuário,
+      pensada só para ser usada no campo de busca dos sites (ex: 'Ryzen 7').
+    - Filtros de preço / marca (ex: 'até 1500', 'ROG', 'TUF') serão aplicados
+      localmente em Python, NÃO pelo agente no navegador.
     """
     sites_str = ", ".join(HARDWARE_SITES)
 
     prompt = f"""
 Você é um agente especializado em pesquisar peças de hardware para computadores.
 
-1. Acesse APENAS os seguintes sites de lojas de hardware brasileiras:
-   {sites_str}
+Seu objetivo é navegar em alguns sites de lojas brasileiras e retornar uma LISTA
+ESTRUTURADA de produtos de hardware relacionados à consulta de busca.
 
-2. Em cada um desses sites, pesquise pela seguinte peça (use o campo de busca do site):
-   "{query}"
+IMPORTANTE:
+- Use o texto da consulta de busca exatamente como fornecido abaixo ao usar a busca dos sites.
+- NÃO aplique filtros de preço ou marca por conta própria.
+- Apenas busque e colete os produtos relevantes à consulta.
+- O sistema Python fará filtros adicionais (preço, marca, etc.) depois.
+- Se algum site tiver desafio de segurança (como Cloudflare) ou não carregar,
+  ignore esse site e continue com os outros.
 
-3. Para cada site, pegue até os 5 primeiros resultados que realmente correspondam à peça
-   (por exemplo, mesma GPU/CPU, mesma geração ou muito próxima).
+SITES QUE VOCÊ PODE USAR (ACESSAR APENAS ESTES):
+{sites_str}
 
-4. Para cada produto encontrado, extraia:
-   - store: nome da loja (ex: Kabum, Terabyte, Pichau)
-   - name: nome completo do produto
-   - price_brl: preço em reais como número (sem R$, sem ponto de milhar, use ponto como separador decimal)
-   - availability: texto simples como "Em estoque", "Esgotado", "Pré-venda" ou similar
-   - url: link direto para a página do produto
+CONSULTA DE BUSCA (COLE EXATAMENTE NO CAMPO DE BUSCA DO SITE):
+\"\"\"{search_query}\"\"\"
 
-5. Não inclua itens que sejam acessórios irrelevantes (ex: cabo HDMI, capinha, etc.)
-   se a busca for por uma peça principal (GPU, CPU, memória, SSD...).
+PARA CADA SITE:
+1. Abra o site.
+2. Encontre o campo de busca.
+3. Cole a consulta exatamente como escrita acima.
+4. Pressione Enter ou clique no botão de buscar.
+5. Na página de resultados, identifique produtos de hardware relevantes para a consulta.
+   - Exemplos de itens válidos: placas de vídeo, processadores, memórias, SSDs, placas-mãe etc.
+   - Evite acessórios irrelevantes como cabo HDMI, capinhas, adaptadores simples, etc.
+6. Coleta de dados:
+   Para cada produto relevante (até 10 por site), extraia:
+   - store: nome da loja (ex: "Kabum", "TerabyteShop", "Pichau")
+   - name: nome completo do produto, conforme aparece no site
+   - price_brl: preço em reais como NÚMERO (float). Converta de texto como
+     "R$ 1.999,90" para 1999.90 (sem "R$", sem ponto de milhar, use PONTO como separador decimal).
+   - availability: texto simples como "Em estoque", "Esgotado", "Pré-venda" ou similar, se disponível.
+   - url: link direto para a página do produto.
 
-6. Retorne os dados EXATAMENTE no formato do schema Pydantic que o sistema espera.
+SOBRE SITES COM PROBLEMA:
+- Se um site mostrar desafios de segurança (como Cloudflare), ficar travado, ou não carregar resultados,
+  você pode pular esse site e continuar com os demais.
+- Ainda assim, retorne os dados dos sites que funcionarem normalmente.
+
+FORMATO DE RETORNO:
+- Você DEVE retornar os dados exatamente no formato do schema Pydantic chamado SearchResult, que contém:
+  - items: lista de objetos HardwareItem, cada um com {{ "store", "name", "price_brl", "availability", "url" }}.
+
+- NÃO invente produtos.
+- Se não encontrar nada em nenhum site, retorne SearchResult com items como lista vazia.
 """
     return prompt
 
 
-async def search_hardware_async(query: str, show_steps: bool = True) -> SearchResult:
+async def search_hardware_async(search_query: str, show_steps: bool = True) -> SearchResult:
     """
     Função assíncrona que:
     - Cria o client do Browser Use
@@ -56,7 +82,7 @@ async def search_hardware_async(query: str, show_steps: bool = True) -> SearchRe
 
     print("[INFO] Criando task na Browser Use Cloud...")
     task = await client.tasks.create_task(
-        task=build_hardware_task_prompt(query),
+        task=build_hardware_task_prompt(search_query),
         schema=SearchResult,
     )
 
@@ -74,18 +100,15 @@ async def search_hardware_async(query: str, show_steps: bool = True) -> SearchRe
 
     if result.parsed_output is None:
         print("[AVISO] Não foi possível converter a saída para SearchResult. Verifique o prompt.")
+        print("\n[DEBUG] Saída bruta do LLM:")
+        print(result.output)
         return SearchResult(items=[])
 
     return result.parsed_output
 
 
-def search_hardware(query: str, show_steps: bool = True) -> SearchResult:
+def search_hardware(search_query: str, show_steps: bool = True) -> SearchResult:
     """
     Versão síncrona (para ser chamada do main).
-
-    Explicação para júnior:
-    - Asyncio é como "modo turbo" para I/O.
-    - Mas às vezes queremos só chamar uma função normal.
-    - Aqui, usamos asyncio.run() para rodar a função async.
     """
-    return asyncio.run(search_hardware_async(query, show_steps=show_steps))
+    return asyncio.run(search_hardware_async(search_query, show_steps=show_steps))
