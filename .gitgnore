@@ -1,0 +1,27 @@
+# Ambiente virtual Python
+.venv/
+venv/
+
+# Arquivos de ambiente / segredos
+.env
+
+# Arquivos Python compilados / cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Arquivos de log
+*.log
+
+# Dados gerados pelo programa
+resultado_busca_pecas.csv
+
+# Configurações locais de editor/IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Arquivos de sistema (caso use em outro SO)
+.DS_Store
+Thumbs.db
